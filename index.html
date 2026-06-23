@@ -10,48 +10,41 @@
     <section class="auth-gate" id="authGate" aria-label="访问密码">
       <form class="auth-card" id="authForm">
         <h1>红蓝双轨记牌器</h1>
-        <div class="auth-mode" aria-label="登录身份">
-          <button class="auth-mode-button active" type="button" data-role="player" id="playerModeButton">玩家进入</button>
-          <button class="auth-mode-button" type="button" data-role="owner" id="ownerModeButton">我是房主</button>
-        </div>
-        <label for="passwordInput" id="passwordLabel">玩家密码</label>
-        <input id="passwordInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="请输入密码" />
-        <button class="purple-button" type="submit">进入牌局</button>
-        <p class="auth-note" id="authNote">房主可修改玩家密码、踢掉所有人、关闭牌局。</p>
+        <label for="passwordInput" id="passwordLabel">登录密码</label>
+        <input id="passwordInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="请输入登录密码" />
+        <button class="purple-button" type="submit" id="loginButton">进入牌局</button>
         <p class="auth-error" id="authError" role="alert"></p>
       </form>
     </section>
 
     <main class="app-shell is-hidden" id="appShell">
       <header class="top-bar" aria-label="页面顶部">
-        <button class="icon-button" type="button" id="homeButton" aria-label="回到当前牌局">
-          <span aria-hidden="true">⌂</span>
-        </button>
+        <button class="pill-button compact is-hidden" type="button" id="consoleButton">控制台</button>
         <h1>记牌器打牌</h1>
-        <button class="pill-button compact" type="button" id="copyLinkButton">复制链接</button>
+        <div class="top-actions">
+          <button class="pill-button compact" type="button" id="copyLinkButton">分享</button>
+          <button class="pill-button compact" type="button" id="logoutButton">退出</button>
+        </div>
       </header>
 
       <section class="room-panel" aria-label="牌局设置">
-        <button class="purple-button" type="button" id="newRoomButton">新建牌局</button>
         <div class="room-summary" id="roomSummary">正在准备牌局...</div>
       </section>
 
-      <section class="owner-panel is-hidden" id="ownerPanel" aria-label="房主控制台">
-        <div class="owner-panel-title">房主控制台</div>
-        <label class="owner-field">
-          <span>新玩家密码</span>
-          <input id="playerPasswordInput" type="password" inputmode="numeric" placeholder="输入新密码" />
-        </label>
-        <button class="purple-button" type="button" id="changePlayerPasswordButton">修改玩家密码</button>
-        <label class="owner-toggle">
-          <input id="allowPlayerEditInput" type="checkbox" checked />
-          <span>允许玩家操作计数</span>
-        </label>
-        <div class="owner-actions">
-          <button class="purple-button danger-button" type="button" id="kickAllButton">踢掉所有人</button>
-          <button class="purple-button danger-button" type="button" id="closeRoomButton">关闭本局</button>
-        </div>
-      </section>
+      <div class="owner-sheet" id="ownerSheet" aria-hidden="true">
+        <div class="owner-sheet-backdrop" id="ownerSheetBackdrop"></div>
+        <section class="owner-panel" id="ownerPanel" aria-label="房主控制台" role="dialog" aria-modal="true">
+          <div class="owner-panel-header">
+            <div class="owner-panel-title">房主控制台</div>
+            <button class="sheet-close" type="button" id="ownerSheetClose" aria-label="关闭控制台">✕</button>
+          </div>
+          <div class="owner-actions">
+            <button class="purple-button" type="button" id="createJoinLinkButton">生成玩家链接</button>
+            <button class="purple-button" type="button" id="createGrantLinkButton">授权朋友开局</button>
+            <button class="purple-button danger-button wide-action" type="button" id="closeRoomButton">关闭本局</button>
+          </div>
+        </section>
+      </div>
 
       <section class="deck-controls" aria-label="牌副设置">
         <label class="deck-select red-accent">
@@ -103,7 +96,7 @@
         <button class="purple-button" type="button" id="minusCardButton">减一张牌</button>
       </section>
 
-      <p class="sync-status" id="syncStatus">本地模式</p>
+      <p class="sync-status" id="syncStatus"></p>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </main>
 

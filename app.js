@@ -1,8 +1,7 @@
 (function () {
   "use strict";
 
-  var LOCAL_OWNER_PASSWORD = "19970402";
-  var LOCAL_PLAYER_PASSWORD = "19970402";
+  var LOCAL_OWNER_PASSWORD = "";
   var AUTH_KEY = "poker-counter-session";
   var RANKS = [
     { key: "big", label: "大", keyLabel: "大\n王", perDeck: 1 },
@@ -34,68 +33,67 @@
   var state = null;
   var roomId = "";
   var activeColor = "red";
-  var loginRole = "player";
   var session = null;
-  var access = { allowPlayerEdit: true, closed: false };
+  var access = { closed: false };
   var supabaseClient = null;
   var roomChannel = null;
   var saveTimer = null;
   var toastTimer = null;
   var remoteApplying = false;
+  var ownerPanelOpen = false;
+  var eventsBound = false;
 
   document.addEventListener("DOMContentLoaded", boot);
 
   function boot() {
-    roomId = getOrCreateRoomId();
     collectBaseElements();
     bindAuthEvents();
-    restoreSessionOrShowLogin();
+    handleEntry();
   }
 
   function collectBaseElements() {
     els.authGate = document.getElementById("authGate");
     els.authForm = document.getElementById("authForm");
     els.passwordInput = document.getElementById("passwordInput");
-    els.passwordLabel = document.getElementById("passwordLabel");
     els.authError = document.getElementById("authError");
-    els.authNote = document.getElementById("authNote");
-    els.playerModeButton = document.getElementById("playerModeButton");
-    els.ownerModeButton = document.getElementById("ownerModeButton");
     els.appShell = document.getElementById("appShell");
   }
 
   function bindAuthEvents() {
-    els.playerModeButton.addEventListener("click", function () {
-      setLoginRole("player");
-    });
-    els.ownerModeButton.addEventListener("click", function () {
-      setLoginRole("owner");
-    });
     els.authForm.addEventListener("submit", function (event) {
       event.preventDefault();
-      login(els.passwordInput.value.trim());
+      ownerLogin(els.passwordInput.value.trim());
     });
   }
 
-  function setLoginRole(role) {
-    loginRole = role === "owner" ? "owner" : "player";
-    els.playerModeButton.classList.toggle("active", loginRole === "player");
-    els.ownerModeButton.classList.toggle("active", loginRole === "owner");
-    els.passwordLabel.textContent = loginRole === "owner" ? "房主密码" : "玩家密码";
-    els.passwordInput.value = "";
-    els.authError.textContent = "";
-  }
+  function handleEntry() {
+    var params = new URLSearchParams(window.location.search);
+    var grantToken = params.get("grantToken");
+    var joinToken = params.get("joinToken");
 
-  function restoreSessionOrShowLogin() {
+    if (grantToken) {
+      createRoomFromGrant(grantToken);
+      return;
+    }
+
+    roomId = getOrCreateRoomId();
     session = loadSession();
+
+    if (joinToken && !session) {
+      joinWithToken(joinToken);
+      return;
+    }
+
     if (!session) {
       showLogin();
       return;
     }
-    if (!cloudAuthReady()) {
+
+    if (!cloudAuthReady() || session.mode === "local") {
       unlockApp();
       return;
     }
+
     authRequest({ action: "validate", roomId: roomId, token: session.token })
       .then(function (result) {
         applyAccessResult(result);
@@ -103,7 +101,11 @@
       })
       .catch(function () {
         clearSession();
-        showLogin("登录已失效，请重新输入密码");
+        if (joinToken) {
+          joinWithToken(joinToken);
+        } else {
+          showLogin("登录已失效，请重新输入登录密码");
+        }
       });
   }
 
@@ -111,48 +113,108 @@
     els.appShell.classList.add("is-hidden");
     els.authGate.classList.remove("is-hidden");
     els.authError.textContent = message || "";
+    els.passwordInput.value = "";
     els.passwordInput.focus();
   }
 
-  function login(password) {
+  function ownerLogin(password) {
     if (!password) {
-      els.authError.textContent = "请输入密码";
+      els.authError.textContent = "请输入登录密码";
       return;
     }
     els.authError.textContent = "";
 
     if (!cloudAuthReady()) {
-      var ok = loginRole === "owner" ? password === LOCAL_OWNER_PASSWORD : password === LOCAL_PLAYER_PASSWORD;
-      if (!ok) {
-        els.authError.textContent = "密码不正确";
+      if (LOCAL_OWNER_PASSWORD && password !== LOCAL_OWNER_PASSWORD) {
+        els.authError.textContent = "密码错误";
         els.passwordInput.select();
         return;
       }
-      session = { mode: "local", role: loginRole, token: "local", allowPlayerEdit: true };
+      session = { mode: "local", role: "owner", token: "local" };
       saveSession(session);
       unlockApp();
       return;
     }
 
-    authRequest({
-      action: "login",
-      roomId: roomId,
-      role: loginRole,
-      password: password,
-      initialState: createFreshState(DEFAULT_STATE.redDecks, DEFAULT_STATE.blueDecks)
-    })
+    ownerLoginRequest(password)
       .then(function (result) {
         session = { mode: "cloud", role: result.role, token: result.token };
         saveSession(session);
-        if (result.state) {
-          state = normalizeState(result.state);
-        }
+        if (result.state) state = normalizeState(result.state);
         applyAccessResult(result);
         unlockApp();
       })
       .catch(function (error) {
-        els.authError.textContent = error.message || "登录失败";
+        els.authError.textContent = friendlyAuthError(error);
         els.passwordInput.select();
+      });
+  }
+
+  function ownerLoginRequest(password) {
+    var payload = {
+      action: "owner-login",
+      roomId: roomId,
+      password: password,
+      initialState: createFreshState(DEFAULT_STATE.redDecks, DEFAULT_STATE.blueDecks)
+    };
+    return authRequest(payload).catch(function (error) {
+      if (!isUnknownActionError(error)) throw error;
+      return authRequest({
+        action: "login",
+        roomId: roomId,
+        role: "owner",
+        password: password,
+        initialState: payload.initialState
+      });
+    });
+  }
+
+  function joinWithToken(joinToken) {
+    if (!cloudAuthReady()) {
+      showLogin("云端未配置，分享链接不能免密进入");
+      return;
+    }
+    roomId = getRoomIdFromUrl();
+    if (!roomId) {
+      showLogin("分享链接缺少牌局编号");
+      return;
+    }
+    authRequest({ action: "join-with-token", roomId: roomId, joinToken: joinToken })
+      .then(function (result) {
+        session = { mode: "cloud", role: result.role, token: result.token };
+        saveSession(session);
+        if (result.state) state = normalizeState(result.state);
+        removeUrlSecret("joinToken");
+        applyAccessResult(result);
+        unlockApp();
+      })
+      .catch(function (error) {
+        showLogin(error.message || "玩家链接已失效");
+      });
+  }
+
+  function createRoomFromGrant(grantToken) {
+    if (!cloudAuthReady()) {
+      showLogin("云端未配置，授权链接不能开局");
+      return;
+    }
+    authRequest({
+      action: "create-room-from-grant",
+      grantToken: grantToken,
+      initialState: createFreshState(DEFAULT_STATE.redDecks, DEFAULT_STATE.blueDecks)
+    })
+      .then(function (result) {
+        roomId = result.roomId;
+        session = { mode: "cloud", role: result.role, token: result.token };
+        saveSession(session);
+        if (result.state) state = normalizeState(result.state);
+        replaceUrlWithRoom(roomId);
+        applyAccessResult(result);
+        unlockApp();
+        showToast("已用朋友授权开好新牌局");
+      })
+      .catch(function (error) {
+        showLogin(error.message || "授权链接已失效");
       });
   }
 
@@ -188,16 +250,17 @@
     els.addCardButton = document.getElementById("addCardButton");
     els.minusCardButton = document.getElementById("minusCardButton");
     els.resetButton = document.getElementById("resetButton");
-    els.newRoomButton = document.getElementById("newRoomButton");
+    els.consoleButton = document.getElementById("consoleButton");
     els.copyLinkButton = document.getElementById("copyLinkButton");
-    els.homeButton = document.getElementById("homeButton");
+    els.logoutButton = document.getElementById("logoutButton");
     els.syncStatus = document.getElementById("syncStatus");
     els.toast = document.getElementById("toast");
     els.ownerPanel = document.getElementById("ownerPanel");
-    els.playerPasswordInput = document.getElementById("playerPasswordInput");
-    els.changePlayerPasswordButton = document.getElementById("changePlayerPasswordButton");
-    els.allowPlayerEditInput = document.getElementById("allowPlayerEditInput");
-    els.kickAllButton = document.getElementById("kickAllButton");
+    els.ownerSheet = document.getElementById("ownerSheet");
+    els.ownerSheetBackdrop = document.getElementById("ownerSheetBackdrop");
+    els.ownerSheetClose = document.getElementById("ownerSheetClose");
+    els.createJoinLinkButton = document.getElementById("createJoinLinkButton");
+    els.createGrantLinkButton = document.getElementById("createGrantLinkButton");
     els.closeRoomButton = document.getElementById("closeRoomButton");
   }
 
@@ -220,6 +283,8 @@
   }
 
   function bindAppEvents() {
+    if (eventsBound) return;
+    eventsBound = true;
     els.keypad.addEventListener("click", function (event) {
       var button = event.target.closest(".card-key");
       if (button) playRank(button.dataset.rank);
@@ -229,23 +294,22 @@
     els.addCardButton.addEventListener("click", function () { adjustCurrentRank(1); });
     els.minusCardButton.addEventListener("click", function () { adjustCurrentRank(-1); });
     els.resetButton.addEventListener("click", resetRoom);
-    els.newRoomButton.addEventListener("click", newRoom);
-    els.copyLinkButton.addEventListener("click", copyRoomLink);
-    els.homeButton.addEventListener("click", function () {
-      setRoomIdInUrl(roomId);
-      showToast("已回到当前牌局链接");
+    els.consoleButton.addEventListener("click", toggleConsole);
+    els.ownerSheetBackdrop.addEventListener("click", closeConsole);
+    els.ownerSheetClose.addEventListener("click", closeConsole);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeConsole();
     });
+    els.copyLinkButton.addEventListener("click", shareRoom);
+    els.logoutButton.addEventListener("click", logout);
     els.redDecksSelect.addEventListener("change", function () {
       changeDeckCount("red", Number(els.redDecksSelect.value));
     });
     els.blueDecksSelect.addEventListener("change", function () {
       changeDeckCount("blue", Number(els.blueDecksSelect.value));
     });
-    els.changePlayerPasswordButton.addEventListener("click", changePlayerPassword);
-    els.allowPlayerEditInput.addEventListener("change", function () {
-      ownerAction({ type: "set-player-edit", allowPlayerEdit: els.allowPlayerEditInput.checked });
-    });
-    els.kickAllButton.addEventListener("click", kickAll);
+    els.createJoinLinkButton.addEventListener("click", shareRoom);
+    els.createGrantLinkButton.addEventListener("click", createGrantLink);
     els.closeRoomButton.addEventListener("click", toggleRoomClosed);
     window.addEventListener("beforeunload", persistLocal);
   }
@@ -253,12 +317,12 @@
   function setupSupabase() {
     var config = getConfig();
     if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase || !session || session.mode !== "cloud") {
-      els.syncStatus.textContent = "本地模式：配置 Supabase 后可多人共享";
+      els.syncStatus.textContent = "未连接云端，当前仅本机计数";
       persistLocal();
       return;
     }
     supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-    els.syncStatus.textContent = "正在连接共享牌局...";
+    els.syncStatus.textContent = "";
     fetchRoom().then(subscribeRoom).catch(function () {
       els.syncStatus.textContent = "云端连接失败，当前使用本地缓存";
       persistLocal();
@@ -274,7 +338,7 @@
         persistLocal();
         render();
         remoteApplying = false;
-      } else {
+      } else if (session && session.mode === "cloud") {
         scheduleRemoteSave();
       }
     });
@@ -293,10 +357,10 @@
         persistLocal();
         render();
         remoteApplying = false;
-        els.syncStatus.textContent = "云端已同步";
+        els.syncStatus.textContent = "";
       })
       .subscribe(function (status) {
-        if (status === "SUBSCRIBED") els.syncStatus.textContent = "共享模式：同一链接实时同步";
+        if (status === "SUBSCRIBED") els.syncStatus.textContent = "";
       });
   }
 
@@ -337,18 +401,6 @@
     }
   }
 
-  function newRoom() {
-    if (session && session.mode === "cloud" && session.role !== "owner") {
-      showToast("只有房主可以新建牌局");
-      return;
-    }
-    if (!window.confirm("创建一局全新的牌局？")) return;
-    clearSession();
-    roomId = createRoomId();
-    setRoomIdInUrl(roomId);
-    window.location.reload();
-  }
-
   function changeDeckCount(color, deckCount) {
     if (!canEdit()) {
       render();
@@ -366,9 +418,11 @@
       showToast("本局已关闭");
       return false;
     }
-    if (!session || session.role === "owner" || access.allowPlayerEdit) return true;
-    showToast("当前只允许房主操作");
-    return false;
+    if (!session) {
+      showToast("请先进入牌局");
+      return false;
+    }
+    return true;
   }
 
   function setActiveColor(color) {
@@ -392,63 +446,107 @@
     saveTimer = setTimeout(function () {
       saveRemoteNow().catch(function (error) {
         els.syncStatus.textContent = error.message || "云端保存失败";
+        recoverAfterRemoteReject(error);
       });
     }, 120);
   }
 
   function saveRemoteNow() {
-    els.syncStatus.textContent = "正在保存...";
+    els.syncStatus.textContent = "";
     return authRequest({ action: "save-state", roomId: roomId, token: session.token, state: sharedStatePayload() })
       .then(function (result) {
         applyAccessResult(result);
-        els.syncStatus.textContent = "云端已保存";
+        els.syncStatus.textContent = "";
       });
   }
 
-  function changePlayerPassword() {
-    var password = els.playerPasswordInput.value.trim();
-    if (!password) {
-      showToast("请输入新玩家密码");
+  function recoverAfterRemoteReject(error) {
+    if (!session || session.mode !== "cloud") return;
+    authRequest({ action: "validate", roomId: roomId, token: session.token })
+      .then(function (result) {
+        applyAccessResult(result);
+        if (result.state) {
+          state = normalizeState(result.state);
+          persistLocal();
+          render();
+        }
+      })
+      .catch(function () {
+        if (error && /closed/i.test(error.message || "")) {
+          access.closed = true;
+          showToast("本局已关闭");
+        }
+        fetchRoom().catch(function () {
+          render();
+        });
+      });
+  }
+
+  function toggleConsole() {
+    if (!isOwner()) return;
+    ownerPanelOpen = !ownerPanelOpen;
+    renderOwnerPanel();
+  }
+
+  function closeConsole() {
+    if (!ownerPanelOpen) return;
+    ownerPanelOpen = false;
+    renderOwnerPanel();
+  }
+
+  function shareRoom() {
+    if (!session || session.mode !== "cloud" || !isOwner()) {
+      showToast("只有房主可以生成分享链接");
       return;
     }
-    ownerAction({ type: "set-player-password", playerPassword: password }).then(function () {
-      els.playerPasswordInput.value = "";
-      showToast("玩家密码已修改，旧登录已失效");
+    ownerAction({ type: "create-join-link" }).then(function (result) {
+      copyText(joinUrl(result.joinToken), "玩家免密链接已复制，24 小时内有效");
     });
   }
 
-  function kickAll() {
-    if (!window.confirm("踢掉所有玩家和旧登录？你也需要重新登录。")) return;
-    ownerAction({ type: "kick-all" }).then(function () {
-      clearSession();
-      window.location.reload();
+  function createGrantLink() {
+    ownerAction({ type: "create-grant-link" }).then(function (result) {
+      copyText(grantUrl(result.grantToken), "朋友 24 小时开局授权链接已复制");
     });
   }
 
   function toggleRoomClosed() {
+    if (!isOwner()) return;
     var nextClosed = !access.closed;
-    var text = nextClosed ? "关闭本局后玩家不能进入或操作，确认关闭？" : "重新开启本局？";
+    var text = nextClosed ? "关闭本局后，玩家分享链接不能继续进入。确认关闭？" : "重新开启本局？";
     if (!window.confirm(text)) return;
     ownerAction({ type: "set-closed", closed: nextClosed }).then(function (result) {
       applyAccessResult(result);
-      renderOwnerPanel();
+      render();
       showToast(nextClosed ? "本局已关闭" : "本局已开启");
     });
   }
 
   function ownerAction(payload) {
-    if (!session || session.mode !== "cloud" || session.role !== "owner") {
-      showToast("只有云端房主模式可使用");
+    if (!session || session.mode !== "cloud" || !isOwner()) {
+      showToast("只有房主可以使用控制台");
       return Promise.reject(new Error("需要房主权限"));
     }
-    return authRequest(Object.assign({ action: "owner-action", roomId: roomId, token: session.token }, payload)).then(function (result) {
-      applyAccessResult(result);
-      renderOwnerPanel();
-      return result;
-    }).catch(function (error) {
-      showToast(error.message || "操作失败");
-      throw error;
-    });
+    return authRequest(Object.assign({ action: "owner-action", roomId: roomId, token: session.token }, payload))
+      .then(function (result) {
+        applyAccessResult(result);
+        renderOwnerPanel();
+        return result;
+      })
+      .catch(function (error) {
+        showToast(error.message || "操作失败");
+        throw error;
+      });
+  }
+
+  function logout() {
+    clearSession();
+    teardownChannel();
+    state = null;
+    session = null;
+    access = { closed: false };
+    ownerPanelOpen = false;
+    showLogin("已退出，请重新输入登录密码");
   }
 
   function render() {
@@ -480,10 +578,13 @@
   }
 
   function renderOwnerPanel() {
-    if (!els.ownerPanel) return;
-    var isOwner = session && session.role === "owner";
-    els.ownerPanel.classList.toggle("is-hidden", !isOwner);
-    els.allowPlayerEditInput.checked = !!access.allowPlayerEdit;
+    if (!els.ownerSheet || !els.consoleButton) return;
+    var visible = isOwner();
+    var open = visible && ownerPanelOpen;
+    els.consoleButton.classList.toggle("is-hidden", !visible);
+    els.copyLinkButton.classList.toggle("is-hidden", !visible);
+    els.ownerSheet.classList.toggle("open", open);
+    els.ownerSheet.setAttribute("aria-hidden", open ? "false" : "true");
     els.closeRoomButton.textContent = access.closed ? "开启本局" : "关闭本局";
   }
 
@@ -577,6 +678,19 @@
     });
   }
 
+  function isUnknownActionError(error) {
+    return /unknown action|未知操作/i.test(error && error.message ? error.message : "");
+  }
+
+  function friendlyAuthError(error) {
+    var message = error && error.message ? error.message : "";
+    if (isUnknownActionError(error)) return "请重新部署 Supabase 函数后再登录";
+    if (/not configured|OWNER_SETUP_PASSWORD/i.test(message)) return "云端登录密码还没配置";
+    if (/wrong owner password|wrong password|密码不正确|password/i.test(message)) return "密码错误";
+    if (/failed to fetch|network/i.test(message)) return "网络连接失败";
+    return message || "登录失败";
+  }
+
   function cloudAuthReady() {
     var config = getConfig();
     return !!(config.supabaseUrl && config.supabaseAnonKey && getAuthFunctionUrl(config));
@@ -594,20 +708,27 @@
 
   function applyAccessResult(result) {
     if (!result) return;
-    access.allowPlayerEdit = result.allowPlayerEdit !== false;
     access.closed = result.closed === true;
     if (result.role && session) session.role = result.role;
     if (result.state) state = normalizeState(result.state);
     saveSession(session);
   }
 
+  function isOwner() {
+    return !!(session && session.role === "owner");
+  }
+
   function getOrCreateRoomId() {
-    var params = new URLSearchParams(window.location.search);
-    var existing = params.get("roomId");
-    if (existing && /^[a-zA-Z0-9_-]{6,48}$/.test(existing)) return existing;
+    var existing = getRoomIdFromUrl();
+    if (existing) return existing;
     var id = createRoomId();
-    setRoomIdInUrl(id);
+    replaceUrlWithRoom(id);
     return id;
+  }
+
+  function getRoomIdFromUrl() {
+    var existing = new URLSearchParams(window.location.search).get("roomId");
+    return existing && /^[a-zA-Z0-9_-]{6,48}$/.test(existing) ? existing : "";
   }
 
   function createRoomId() {
@@ -616,10 +737,39 @@
     return Array.prototype.map.call(bytes, function (byte) { return byte.toString(16).padStart(2, "0"); }).join("");
   }
 
-  function setRoomIdInUrl(id) {
+  function replaceUrlWithRoom(id) {
     var url = new URL(window.location.href);
+    url.search = "";
     url.searchParams.set("roomId", id);
     window.history.replaceState({}, "", url.toString());
+  }
+
+  function removeUrlSecret(name) {
+    var url = new URL(window.location.href);
+    url.searchParams.delete(name);
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  function playerVisibleRoomUrl() {
+    var url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("roomId", roomId);
+    return url.toString();
+  }
+
+  function joinUrl(token) {
+    var url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("roomId", roomId);
+    url.searchParams.set("joinToken", token);
+    return url.toString();
+  }
+
+  function grantUrl(token) {
+    var url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("grantToken", token);
+    return url.toString();
   }
 
   function storageKey() {
@@ -694,16 +844,16 @@
     }
   }
 
-  function copyRoomLink() {
-    var link = window.location.href;
+  function copyText(text, successMessage) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(link).then(function () { showToast("牌局链接已复制"); }).catch(fallbackCopy);
+      navigator.clipboard.writeText(text).then(function () {
+        showToast(successMessage);
+      }).catch(function () {
+        window.prompt("复制这个链接", text);
+      });
       return;
     }
-    fallbackCopy();
-    function fallbackCopy() {
-      window.prompt("复制这个牌局链接", link);
-    }
+    window.prompt("复制这个链接", text);
   }
 
   function showToast(message) {
