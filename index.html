@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>红蓝双轨记牌器</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section class="auth-gate" id="authGate" aria-label="访问密码">
+      <form class="auth-card" id="authForm">
+        <h1>红蓝双轨记牌器</h1>
+        <label for="passwordInput">访问密码</label>
+        <input id="passwordInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="请输入密码" />
+        <button class="purple-button" type="submit">进入</button>
+        <p class="auth-error" id="authError" role="alert"></p>
+      </form>
+    </section>
+
+    <main class="app-shell is-hidden" id="appShell">
+      <header class="top-bar" aria-label="页面顶部">
+        <button class="icon-button" type="button" id="homeButton" aria-label="回到当前牌局">
+          <span aria-hidden="true">⌂</span>
+        </button>
+        <h1>记牌器打牌</h1>
+        <button class="pill-button compact" type="button" id="copyLinkButton">复制链接</button>
+      </header>
+
+      <section class="room-panel" aria-label="牌局设置">
+        <button class="purple-button" type="button" id="newRoomButton">新建牌局</button>
+        <div class="room-summary" id="roomSummary">正在准备牌局...</div>
+      </section>
+
+      <section class="deck-controls" aria-label="牌副设置">
+        <label class="deck-select red-accent">
+          <span>红牌</span>
+          <select id="redDecksSelect" aria-label="红牌副数">
+            <option value="1">1 副</option>
+            <option value="2">2 副</option>
+            <option value="3">3 副</option>
+            <option value="4">4 副</option>
+          </select>
+        </label>
+        <label class="deck-select blue-accent">
+          <span>蓝牌</span>
+          <select id="blueDecksSelect" aria-label="蓝牌副数">
+            <option value="1">1 副</option>
+            <option value="2">2 副</option>
+            <option value="3">3 副</option>
+            <option value="4">4 副</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="operation-row" aria-label="当前操作">
+        <div class="operation-badge">
+          当前操作：<strong id="activeColorLabel">红牌</strong>
+        </div>
+        <div class="track-switch" aria-label="红蓝切换">
+          <button class="track-option active red-option" type="button" data-color="red" id="redTrackButton">红牌</button>
+          <button class="track-option blue-option" type="button" data-color="blue" id="blueTrackButton">蓝牌</button>
+        </div>
+      </section>
+
+      <section class="score-board" aria-label="红蓝剩余牌数">
+        <div class="rank-row header-row" id="rankHeader"></div>
+        <div class="rank-row count-row red-row" id="redCounts"></div>
+        <div class="rank-row count-row blue-row" id="blueCounts"></div>
+      </section>
+
+      <section class="status-line" aria-live="polite">
+        <span>当前出牌：</span>
+        <strong id="currentCard">Q</strong>
+      </section>
+
+      <section class="keypad" id="keypad" aria-label="主操作键盘"></section>
+
+      <section class="action-row" aria-label="操作">
+        <button class="purple-button" type="button" id="addCardButton">加一张牌</button>
+        <button class="purple-button" type="button" id="resetButton">重新开始</button>
+        <button class="purple-button" type="button" id="minusCardButton">减一张牌</button>
+      </section>
+
+      <p class="sync-status" id="syncStatus">本地模式</p>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script>
+      window.POKER_COUNTER_CONFIG = window.POKER_COUNTER_CONFIG || {
+        supabaseUrl: "",
+        supabaseAnonKey: ""
+      };
+    </script>
+    <script src="./config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
