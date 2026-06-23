@@ -22,6 +22,8 @@
 html,
 body {
   min-height: 100%;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -29,6 +31,8 @@ body {
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .is-hidden {
@@ -38,10 +42,17 @@ body {
 button,
 select {
   font: inherit;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button {
   -webkit-tap-highlight-color: transparent;
+}
+
+input {
+  touch-action: manipulation;
 }
 
 .app-shell {
@@ -122,6 +133,9 @@ button {
 .card-key {
   border: 0;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .icon-button {

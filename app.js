@@ -33,6 +33,7 @@
   var els = {};
   var state = null;
   var roomId = "";
+  var activeColor = "red";
   var supabaseClient = null;
   var roomChannel = null;
   var saveTimer = null;
@@ -79,6 +80,7 @@
     roomId = getOrCreateRoomId();
     state = loadLocalState(roomId) || createFreshState(DEFAULT_STATE.redDecks, DEFAULT_STATE.blueDecks);
     state = normalizeState(state);
+    activeColor = normalizeColor(loadLocalActiveColor(roomId) || state.activeColor);
     bindEvents();
     render();
     setupSupabase();
@@ -289,7 +291,7 @@
   }
 
   function adjustRank(rankKey, delta) {
-    var color = state.activeColor;
+    var color = activeColor;
     var counts = state.counts[color];
     var current = counts[rankKey] || 0;
     var max = maxCountFor(color, rankKey);
@@ -306,11 +308,14 @@
   }
 
   function setActiveColor(color) {
-    if (state.activeColor === color) {
+    color = normalizeColor(color);
+    if (activeColor === color) {
       return;
     }
-    state.activeColor = color;
-    saveAndRender("已切换到" + colorLabel(color));
+    activeColor = color;
+    persistLocalActiveColor();
+    render();
+    showToast("已切换到" + colorLabel(color));
   }
 
   function changeDeckCount(color, deckCount) {
@@ -352,7 +357,7 @@
     els.syncStatus.textContent = "正在保存...";
     return supabaseClient
       .from("rooms")
-      .upsert({ id: roomId, state: state, updated_at: new Date().toISOString() })
+      .upsert({ id: roomId, state: sharedStatePayload(), updated_at: new Date().toISOString() })
       .then(function (result) {
         if (result.error) {
           throw result.error;
@@ -366,12 +371,12 @@
     els.redDecksSelect.value = String(state.redDecks);
     els.blueDecksSelect.value = String(state.blueDecks);
     els.currentCard.textContent = rankLabel(state.currentRank);
-    els.activeColorLabel.textContent = colorLabel(state.activeColor);
-    els.activeColorLabel.className = state.activeColor === "red" ? "red-text" : "blue-text";
+    els.activeColorLabel.textContent = colorLabel(activeColor);
+    els.activeColorLabel.className = activeColor === "red" ? "red-text" : "blue-text";
     els.roomSummary.textContent = "红 " + state.redDecks + " 副 / 蓝 " + state.blueDecks + " 副 / 剩余 " + totalRemaining() + " 张";
 
-    els.redTrackButton.classList.toggle("active", state.activeColor === "red");
-    els.blueTrackButton.classList.toggle("active", state.activeColor === "blue");
+    els.redTrackButton.classList.toggle("active", activeColor === "red");
+    els.blueTrackButton.classList.toggle("active", activeColor === "blue");
 
     RANKS.forEach(function (rank) {
       var redCell = document.getElementById("red-count-" + rank.key);
@@ -382,8 +387,8 @@
       blueCell.textContent = String(blueValue);
       redCell.classList.toggle("empty-count", redValue === 0);
       blueCell.classList.toggle("empty-count", blueValue === 0);
-      redCell.classList.toggle("current-red", state.activeColor === "red" && state.currentRank === rank.key);
-      blueCell.classList.toggle("current-blue", state.activeColor === "blue" && state.currentRank === rank.key);
+      redCell.classList.toggle("current-red", activeColor === "red" && state.currentRank === rank.key);
+      blueCell.classList.toggle("current-blue", activeColor === "blue" && state.currentRank === rank.key);
     });
 
     Array.prototype.forEach.call(els.keypad.querySelectorAll(".card-key"), function (button) {
@@ -397,7 +402,6 @@
     return normalizeState({
       redDecks: clamp(redDecks || 4, 1, 4),
       blueDecks: clamp(blueDecks || 4, 1, 4),
-      activeColor: "red",
       currentRank: "Q",
       counts: {
         red: createCounts(redDecks || 4),
@@ -419,7 +423,7 @@
     var next = Object.assign({}, DEFAULT_STATE, rawState || {});
     next.redDecks = clamp(Number(next.redDecks) || 4, 1, 4);
     next.blueDecks = clamp(Number(next.blueDecks) || 4, 1, 4);
-    next.activeColor = next.activeColor === "blue" ? "blue" : "red";
+    next.activeColor = normalizeColor(next.activeColor);
     next.currentRank = RANKS.some(function (rank) { return rank.key === next.currentRank; }) ? next.currentRank : "Q";
     next.counts = next.counts || {};
     next.counts.red = normalizeCounts(next.counts.red, next.redDecks);
@@ -484,6 +488,10 @@
     return "poker-counter-room-" + roomId;
   }
 
+  function activeColorKey(id) {
+    return "poker-counter-active-color-" + id;
+  }
+
   function loadLocalState(id) {
     try {
       var saved = window.localStorage.getItem("poker-counter-room-" + id);
@@ -498,10 +506,37 @@
       return;
     }
     try {
-      window.localStorage.setItem(storageKey(), JSON.stringify(state));
+      var localState = Object.assign({}, state, { activeColor: activeColor });
+      window.localStorage.setItem(storageKey(), JSON.stringify(localState));
     } catch (error) {
       // Local persistence is best-effort.
     }
+  }
+
+  function loadLocalActiveColor(id) {
+    try {
+      return window.localStorage.getItem(activeColorKey(id));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistLocalActiveColor() {
+    try {
+      window.localStorage.setItem(activeColorKey(roomId), activeColor);
+    } catch (error) {
+      // Local persistence is best-effort.
+    }
+  }
+
+  function sharedStatePayload() {
+    return {
+      redDecks: state.redDecks,
+      blueDecks: state.blueDecks,
+      currentRank: state.currentRank,
+      counts: state.counts,
+      updatedAt: state.updatedAt
+    };
   }
 
   function copyRoomLink() {
@@ -546,6 +581,10 @@
 
   function colorLabel(color) {
     return color === "blue" ? "蓝牌" : "红牌";
+  }
+
+  function normalizeColor(color) {
+    return color === "blue" ? "blue" : "red";
   }
 
   function clamp(value, min, max) {
