@@ -69,6 +69,37 @@ input {
   padding: 24px;
 }
 
+.boot-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+}
+
+.boot-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(116, 70, 120, 0.18);
+  border-top-color: var(--purple);
+  border-radius: 50%;
+  animation: boot-spin 500ms linear infinite;
+}
+
+@keyframes boot-spin {
+  to { transform: rotate(360deg); }
+}
+
+.boot-text {
+  margin: 0;
+  color: var(--purple-dark);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
 .auth-card {
   width: min(100%, 360px);
   display: grid;
@@ -199,6 +230,26 @@ input {
   font-size: clamp(18px, 4.8vw, 24px);
   font-weight: 800;
   line-height: 1.25;
+}
+
+.expiry-banner {
+  margin-top: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--purple-dark);
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.expiry-banner:empty {
+  display: none;
+}
+
+.expiry-banner.is-urgent {
+  color: var(--red);
+  background: rgba(255, 235, 235, 0.82);
 }
 
 .deck-controls {

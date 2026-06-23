@@ -44,6 +44,7 @@
   var ownerPanelOpen = false;
   var eventsBound = false;
   var shareCardSuccessMessage = "链接已复制";
+  var pendingShareMeta = null;
 
   document.addEventListener("DOMContentLoaded", boot);
 
@@ -54,6 +55,7 @@
   }
 
   function collectBaseElements() {
+    els.bootScreen = document.getElementById("bootScreen");
     els.authGate = document.getElementById("authGate");
     els.authForm = document.getElementById("authForm");
     els.passwordInput = document.getElementById("passwordInput");
@@ -112,6 +114,7 @@
   }
 
   function showLogin(message) {
+    if (els.bootScreen) els.bootScreen.classList.add("is-hidden");
     els.appShell.classList.add("is-hidden");
     els.authGate.classList.remove("is-hidden");
     els.authError.textContent = message || "";
@@ -221,6 +224,7 @@
   }
 
   function unlockApp() {
+    if (els.bootScreen) els.bootScreen.classList.add("is-hidden");
     els.authGate.classList.add("is-hidden");
     els.appShell.classList.remove("is-hidden");
     initApp();
@@ -263,6 +267,7 @@
     els.createJoinLinkButton = document.getElementById("createJoinLinkButton");
     els.createGrantLinkButton = document.getElementById("createGrantLinkButton");
     els.closeRoomButton = document.getElementById("closeRoomButton");
+    els.expiryBanner = document.getElementById("expiryBanner");
     els.shareCard = document.getElementById("shareCard");
     els.shareCardBackdrop = document.getElementById("shareCardBackdrop");
     els.shareCardClose = document.getElementById("shareCardClose");
@@ -515,7 +520,7 @@
         openShareCard({
           title: "邀请好友",
           desc: "好友点开链接免密加入本局，24h 内不限次数。",
-          url: joinUrl(result.joinToken),
+          url: joinUrl(result.joinToken, result.expiresAt),
           expiresAt: result.expiresAt,
           successMessage: "邀请好友链接已复制"
         });
@@ -533,7 +538,7 @@
         openShareCard({
           title: "临时房主",
           desc: "好友点开后成为临时房主、自己开一局，24h 内不限次数。",
-          url: grantUrl(result.grantToken),
+          url: grantUrl(result.grantToken, result.expiresAt),
           expiresAt: result.expiresAt,
           successMessage: "临时房主链接已复制"
         });
@@ -556,6 +561,12 @@
   function openShareCard(opts) {
     if (!els.shareCard) return;
     shareCardSuccessMessage = opts.successMessage || "链接已复制";
+    pendingShareMeta = {
+      title: opts.title,
+      desc: opts.desc,
+      expiresAt: opts.expiresAt,
+      url: opts.url
+    };
     els.shareCardTitle.textContent = opts.title;
     els.shareCardDesc.textContent = opts.desc;
     els.shareCardLink.value = opts.url;
@@ -571,9 +582,16 @@
   }
 
   function copyShareLink() {
+    var meta = pendingShareMeta;
     var url = els.shareCardLink ? els.shareCardLink.value : "";
     if (!url) return;
-    copyText(url, shareCardSuccessMessage);
+    var lines = [];
+    if (meta && meta.title) lines.push("【" + meta.title + "】");
+    if (meta && meta.desc) lines.push(meta.desc);
+    lines.push(url);
+    if (meta && meta.expiresAt) lines.push("（有效至 " + formatExpiry(meta.expiresAt) + "）");
+    var text = lines.join("\n");
+    copyText(text, shareCardSuccessMessage);
   }
 
   function formatExpiry(iso) {
@@ -632,6 +650,7 @@
     els.activeColorLabel.textContent = colorLabel(activeColor);
     els.activeColorLabel.className = activeColor === "red" ? "red-text" : "blue-text";
     els.roomSummary.textContent = "红 " + state.redDecks + " 副 / 蓝 " + state.blueDecks + " 副 / 剩余 " + totalRemaining() + " 张";
+    renderExpiryBanner();
     els.redTrackButton.classList.toggle("active", activeColor === "red");
     els.blueTrackButton.classList.toggle("active", activeColor === "blue");
     RANKS.forEach(function (rank) {
@@ -672,6 +691,28 @@
     if (id) cell.id = id;
     cell.textContent = text;
     return cell;
+  }
+
+  function getExpiryFromUrl() {
+    var params = new URLSearchParams(window.location.search);
+    var exp = params.get("exp");
+    if (!exp) return "";
+    var date = new Date(exp);
+    if (isNaN(date.getTime())) return "";
+    return formatExpiry(exp);
+  }
+
+  function renderExpiryBanner() {
+    if (!els.expiryBanner) return;
+    var expiryFromUrl = getExpiryFromUrl();
+    if (expiryFromUrl) {
+      els.expiryBanner.textContent = "链接有效至 " + expiryFromUrl;
+      var expDate = new Date(new URLSearchParams(window.location.search).get("exp"));
+      var diffHours = (expDate.getTime() - Date.now()) / 3600000;
+      els.expiryBanner.classList.toggle("is-urgent", diffHours > 0 && diffHours < 1);
+    } else {
+      els.expiryBanner.textContent = "";
+    }
   }
 
   function createFreshState(redDecks, blueDecks) {
@@ -861,18 +902,20 @@
     return url.toString();
   }
 
-  function joinUrl(token) {
+  function joinUrl(token, expiresAt) {
     var url = new URL(window.location.href);
     url.search = "";
     url.searchParams.set("roomId", roomId);
     url.searchParams.set("joinToken", token);
+    if (expiresAt) url.searchParams.set("exp", expiresAt);
     return url.toString();
   }
 
-  function grantUrl(token) {
+  function grantUrl(token, expiresAt) {
     var url = new URL(window.location.href);
     url.search = "";
     url.searchParams.set("grantToken", token);
+    if (expiresAt) url.searchParams.set("exp", expiresAt);
     return url.toString();
   }
 

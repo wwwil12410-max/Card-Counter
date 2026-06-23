@@ -7,7 +7,12 @@
     <link rel="stylesheet" href="./styles.css?v=20260624" />
   </head>
   <body>
-    <section class="auth-gate" id="authGate" aria-label="访问密码">
+    <section class="boot-screen" id="bootScreen" aria-label="正在加载">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <p class="boot-text">正在进入牌局…</p>
+    </section>
+
+    <section class="auth-gate is-hidden" id="authGate" aria-label="访问密码">
       <form class="auth-card" id="authForm">
         <h1>红蓝双轨记牌器</h1>
         <label for="passwordInput" id="passwordLabel">登录密码</label>
@@ -28,6 +33,7 @@
 
       <section class="room-panel" aria-label="牌局设置">
         <div class="room-summary" id="roomSummary">正在准备牌局...</div>
+        <div class="expiry-banner" id="expiryBanner"></div>
       </section>
 
       <div class="owner-sheet" id="ownerSheet" aria-hidden="true">
