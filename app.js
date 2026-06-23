@@ -3,6 +3,7 @@
 
   var LOCAL_OWNER_PASSWORD = "";
   var AUTH_KEY = "poker-counter-session";
+  var LAST_ROOM_KEY = "poker-counter-last-room";
   var RANKS = [
     { key: "big", label: "大", keyLabel: "大\n王", perDeck: 1 },
     { key: "small", label: "小", keyLabel: "小\n王", perDeck: 1 },
@@ -251,7 +252,6 @@
     els.minusCardButton = document.getElementById("minusCardButton");
     els.resetButton = document.getElementById("resetButton");
     els.consoleButton = document.getElementById("consoleButton");
-    els.copyLinkButton = document.getElementById("copyLinkButton");
     els.logoutButton = document.getElementById("logoutButton");
     els.syncStatus = document.getElementById("syncStatus");
     els.toast = document.getElementById("toast");
@@ -300,7 +300,6 @@
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape") closeConsole();
     });
-    els.copyLinkButton.addEventListener("click", shareRoom);
     els.logoutButton.addEventListener("click", logout);
     els.redDecksSelect.addEventListener("change", function () {
       changeDeckCount("red", Number(els.redDecksSelect.value));
@@ -582,7 +581,6 @@
     var visible = isOwner();
     var open = visible && ownerPanelOpen;
     els.consoleButton.classList.toggle("is-hidden", !visible);
-    els.copyLinkButton.classList.toggle("is-hidden", !visible);
     els.ownerSheet.classList.toggle("open", open);
     els.ownerSheet.setAttribute("aria-hidden", open ? "false" : "true");
     els.closeRoomButton.textContent = access.closed ? "开启本局" : "关闭本局";
@@ -721,9 +719,31 @@
   function getOrCreateRoomId() {
     var existing = getRoomIdFromUrl();
     if (existing) return existing;
+    var last = loadLastRoomId();
+    if (last) {
+      replaceUrlWithRoom(last);
+      return last;
+    }
     var id = createRoomId();
     replaceUrlWithRoom(id);
     return id;
+  }
+
+  function loadLastRoomId() {
+    try {
+      var saved = window.localStorage.getItem(LAST_ROOM_KEY) || "";
+      return /^[a-zA-Z0-9_-]{6,48}$/.test(saved) ? saved : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function persistLastRoomId() {
+    try {
+      if (roomId) window.localStorage.setItem(LAST_ROOM_KEY, roomId);
+    } catch (error) {
+      // Local persistence is best-effort.
+    }
   }
 
   function getRoomIdFromUrl() {
@@ -804,7 +824,10 @@
 
   function saveSession(value) {
     try {
-      if (value) window.localStorage.setItem(sessionKey(), JSON.stringify(value));
+      if (value) {
+        window.localStorage.setItem(sessionKey(), JSON.stringify(value));
+        persistLastRoomId();
+      }
     } catch (error) {
       // Local persistence is best-effort.
     }
@@ -849,9 +872,32 @@
       navigator.clipboard.writeText(text).then(function () {
         showToast(successMessage);
       }).catch(function () {
-        window.prompt("复制这个链接", text);
+        fallbackCopyText(text, successMessage);
       });
       return;
+    }
+    fallbackCopyText(text, successMessage);
+  }
+
+  function fallbackCopyText(text, successMessage) {
+    try {
+      var textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.top = "-1000px";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, text.length);
+      var ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (ok) {
+        showToast(successMessage);
+        return;
+      }
+    } catch (error) {
+      // Last resort below.
     }
     window.prompt("复制这个链接", text);
   }
