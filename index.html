@@ -10,9 +10,14 @@
     <section class="auth-gate" id="authGate" aria-label="访问密码">
       <form class="auth-card" id="authForm">
         <h1>红蓝双轨记牌器</h1>
-        <label for="passwordInput">访问密码</label>
+        <div class="auth-mode" aria-label="登录身份">
+          <button class="auth-mode-button active" type="button" data-role="player" id="playerModeButton">玩家进入</button>
+          <button class="auth-mode-button" type="button" data-role="owner" id="ownerModeButton">我是房主</button>
+        </div>
+        <label for="passwordInput" id="passwordLabel">玩家密码</label>
         <input id="passwordInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="请输入密码" />
-        <button class="purple-button" type="submit">进入</button>
+        <button class="purple-button" type="submit">进入牌局</button>
+        <p class="auth-note" id="authNote">房主可修改玩家密码、踢掉所有人、关闭牌局。</p>
         <p class="auth-error" id="authError" role="alert"></p>
       </form>
     </section>
@@ -29,6 +34,23 @@
       <section class="room-panel" aria-label="牌局设置">
         <button class="purple-button" type="button" id="newRoomButton">新建牌局</button>
         <div class="room-summary" id="roomSummary">正在准备牌局...</div>
+      </section>
+
+      <section class="owner-panel is-hidden" id="ownerPanel" aria-label="房主控制台">
+        <div class="owner-panel-title">房主控制台</div>
+        <label class="owner-field">
+          <span>新玩家密码</span>
+          <input id="playerPasswordInput" type="password" inputmode="numeric" placeholder="输入新密码" />
+        </label>
+        <button class="purple-button" type="button" id="changePlayerPasswordButton">修改玩家密码</button>
+        <label class="owner-toggle">
+          <input id="allowPlayerEditInput" type="checkbox" checked />
+          <span>允许玩家操作计数</span>
+        </label>
+        <div class="owner-actions">
+          <button class="purple-button danger-button" type="button" id="kickAllButton">踢掉所有人</button>
+          <button class="purple-button danger-button" type="button" id="closeRoomButton">关闭本局</button>
+        </div>
       </section>
 
       <section class="deck-controls" aria-label="牌副设置">
@@ -88,7 +110,8 @@
     <script>
       window.POKER_COUNTER_CONFIG = window.POKER_COUNTER_CONFIG || {
         supabaseUrl: "",
-        supabaseAnonKey: ""
+        supabaseAnonKey: "",
+        roomAuthFunctionUrl: ""
       };
     </script>
     <script src="./config.js"></script>

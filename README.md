@@ -1,54 +1,84 @@
-# 红蓝双轨记牌器
+# Red/Blue Card Counter
 
-手机优先的小程序风格网页记牌器。红牌、蓝牌分别计数；点击牌面会直接对当前红/蓝轨道减一张，下方“加一张牌”或“减一张牌”可用于补记和纠错。
+A mobile-first card counter for two tracks: red cards and blue cards. Tapping a card rank subtracts one card from the currently selected track. The bottom buttons can add or subtract the current rank for correction.
 
-页面已经做了移动端防误缩放处理，快速连续点击牌面时不应触发浏览器双击放大。
+The page includes mobile anti-zoom handling so fast repeated taps should not trigger browser double-tap zoom.
 
-## 本地预览
+## Access Modes
 
-在项目目录启动静态服务器：
+- Without Supabase: local test mode only. Each device keeps its own counts.
+- With Supabase + Edge Function: owner-control mode. Everyone opening the same `roomId` link sees the same live counts.
 
-```powershell
-python -m http.server 5173
-```
+## Owner Control
 
-然后打开：
+The owner can:
+
+- Change the player password
+- Kick all logged-in users
+- Open or close the current room
+- Decide whether players can edit counts
+- Create a new independent room link
+
+Players enter with the player password. Whether they can edit counts is controlled by the owner.
+
+## Files To Upload To GitHub Pages
+
+Upload:
 
 ```text
-http://localhost:5173
+index.html
+styles.css
+app.js
+config.js
+README.md
+supabase-schema.sql
+supabase/functions/room-auth/index.ts
 ```
 
-访问密码：
+Do not upload:
 
 ```text
-19970402
+server.err.log
+server.out.log
 ```
 
-## 云端共享
+## Supabase Setup
 
-当前代码已经预留 Supabase 实时同步。只有填好 Supabase 配置后，多人打开同一个带 `roomId` 的链接才会看到同一套实时牌数。
+1. Run `supabase-schema.sql` in the Supabase SQL Editor.
+2. Deploy the Edge Function at `supabase/functions/room-auth/index.ts`. The function name must be `room-auth`.
+3. Add these Edge Function secrets:
 
-1. 创建 Supabase 项目。
-2. 在 Supabase SQL Editor 运行 `supabase-schema.sql`。
-3. 在 Supabase 的 Realtime 设置里确认 `rooms` 表已启用。
-4. 编辑 `config.js`，填入：
+```text
+OWNER_SETUP_PASSWORD=your_owner_setup_password
+DEFAULT_PLAYER_PASSWORD=default_player_password
+```
+
+Do not write real passwords in README or frontend code.
+
+4. Edit `config.js`:
 
 ```js
 window.POKER_COUNTER_CONFIG = {
-  supabaseUrl: "https://你的项目.supabase.co",
-  supabaseAnonKey: "你的 anon public key"
+  supabaseUrl: "https://your-project.supabase.co",
+  supabaseAnonKey: "your publishable key",
+  roomAuthFunctionUrl: ""
 };
 ```
 
-填好后部署到 Vercel、Netlify 或其他静态托管平台。同一个带 `roomId` 的链接会共享同一局牌数。
+`roomAuthFunctionUrl` can stay empty. The frontend will use:
 
-GitHub Pages 也可以部署这个静态网页。上传修改后的文件后，等待 Pages 重新发布即可。
+```text
+https://your-project.supabase.co/functions/v1/room-auth
+```
 
-## 说明
+## First Room Setup
 
-- 默认红牌 4 副、蓝牌 4 副。
-- 大王、小王每副各 1 张；其他牌面每副 4 张。
-- 修改某一颜色的副数会直接按新副数重置该颜色剩余牌。
-- 点“重新开始”会按当前红蓝副数重置整局。
-- 未配置 Supabase 时自动使用本地模式，刷新页面仍会保留当前设备上的牌数，但不同设备之间不会同步。
-- 配置 Supabase 后，牌数、副数、当前出牌会实时同步；每台设备自己的红/蓝操作选择互不影响。
+1. Open the GitHub Pages link.
+2. Choose owner mode.
+3. Enter the owner setup password stored in Supabase Secrets.
+4. The room permissions will be initialized for this `roomId`.
+5. After that, the owner can change the player password in the owner console.
+
+## Important
+
+Real owner control requires the Supabase Edge Function. GitHub Pages frontend-only passwords cannot provide strong access control.

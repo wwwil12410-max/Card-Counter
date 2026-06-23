@@ -8,8 +8,8 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const ownerSetupPassword = Deno.env.get("OWNER_SETUP_PASSWORD") || "19970402";
-const defaultPlayerPassword = Deno.env.get("DEFAULT_PLAYER_PASSWORD") || "19970402";
+const ownerSetupPassword = Deno.env.get("OWNER_SETUP_PASSWORD") || "";
+const defaultPlayerPassword = Deno.env.get("DEFAULT_PLAYER_PASSWORD") || "";
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 Deno.serve(async (req) => {
@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
     if (action === "save-state") {
       const session = await requireSession(roomId, String(body.token || ""));
       if (session.role !== "owner" && !session.access.allow_player_edit) {
-        throw statusError("当前只允许房主操作", 403);
+        throw statusError("Only owner can edit now", 403);
       }
       await upsertRoom(roomId, body.state);
       return json(accessResponse(session));
@@ -40,10 +40,10 @@ Deno.serve(async (req) => {
       return json(await ownerAction(roomId, body));
     }
 
-    throw statusError("未知操作", 400);
+    throw statusError("Unknown action", 400);
   } catch (error) {
     const status = error.status || 500;
-    return json({ error: error.message || "服务器错误" }, status);
+    return json({ error: error.message || "Server error" }, status);
   }
 });
 
@@ -53,8 +53,11 @@ async function login(roomId: string, body: any) {
   let access = await getAccess(roomId);
 
   if (!access) {
+    if (!ownerSetupPassword || !defaultPlayerPassword) {
+      throw statusError("Function secrets are not configured", 500);
+    }
     if (role !== "owner" || password !== ownerSetupPassword) {
-      throw statusError("牌局尚未由房主初始化", 403);
+      throw statusError("Room must be initialized by owner", 403);
     }
     const initialState = normalizeState(body.initialState);
     await upsertRoom(roomId, initialState);
@@ -62,12 +65,12 @@ async function login(roomId: string, body: any) {
   }
 
   if (access.closed && role !== "owner") {
-    throw statusError("本局已关闭", 403);
+    throw statusError("Room is closed", 403);
   }
 
   const expected = role === "owner" ? access.owner_password_hash : access.player_password_hash;
   if ((await hashPassword(password)) !== expected) {
-    throw statusError("密码不正确", 403);
+    throw statusError("Wrong password", 403);
   }
 
   const token = crypto.randomUUID() + "." + crypto.randomUUID();
@@ -98,13 +101,13 @@ async function validate(roomId: string, token: string) {
 async function ownerAction(roomId: string, body: any) {
   const session = await requireSession(roomId, String(body.token || ""));
   if (session.role !== "owner") {
-    throw statusError("需要房主权限", 403);
+    throw statusError("Owner permission required", 403);
   }
 
   const type = String(body.type || "");
   if (type === "set-player-password") {
     const password = String(body.playerPassword || "");
-    if (password.length < 4) throw statusError("玩家密码至少 4 位", 400);
+    if (password.length < 4) throw statusError("Player password must be at least 4 chars", 400);
     const { error } = await supabase
       .from("room_access")
       .update({
@@ -139,7 +142,7 @@ async function ownerAction(roomId: string, body: any) {
     if (error) throw error;
     await deleteSessions(roomId);
   } else {
-    throw statusError("未知房主操作", 400);
+    throw statusError("Unknown owner action", 400);
   }
 
   const access = await getAccess(roomId);
@@ -159,19 +162,19 @@ async function requireSession(roomId: string, token: string) {
     .eq("room_id", roomId)
     .maybeSingle();
   if (error) throw error;
-  if (!session) throw statusError("登录已失效", 401);
+  if (!session) throw statusError("Login expired", 401);
   if (new Date(session.expires_at).getTime() < Date.now()) {
     await supabase.from("room_sessions").delete().eq("token_hash", tokenHash);
-    throw statusError("登录已过期", 401);
+    throw statusError("Login expired", 401);
   }
 
   const access = await getAccess(roomId);
   if (!access || session.access_version !== access.access_version) {
     await supabase.from("room_sessions").delete().eq("token_hash", tokenHash);
-    throw statusError("登录已失效", 401);
+    throw statusError("Login expired", 401);
   }
   if (access.closed && session.role !== "owner") {
-    throw statusError("本局已关闭", 403);
+    throw statusError("Room is closed", 403);
   }
 
   return { ...session, access };
@@ -241,7 +244,7 @@ async function hashPassword(value: string) {
 function safeRoomId(value: unknown) {
   const roomId = String(value || "");
   if (!/^[a-zA-Z0-9_-]{6,48}$/.test(roomId)) {
-    throw statusError("无效牌局", 400);
+    throw statusError("Invalid room", 400);
   }
   return roomId;
 }
