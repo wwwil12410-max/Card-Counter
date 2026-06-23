@@ -43,6 +43,7 @@
   var remoteApplying = false;
   var ownerPanelOpen = false;
   var eventsBound = false;
+  var shareCardSuccessMessage = "链接已复制";
 
   document.addEventListener("DOMContentLoaded", boot);
 
@@ -131,7 +132,7 @@
         els.passwordInput.select();
         return;
       }
-      session = { mode: "local", role: "owner", token: "local" };
+      session = { mode: "local", role: "owner", token: "local", entry: "password" };
       saveSession(session);
       unlockApp();
       return;
@@ -139,7 +140,7 @@
 
     ownerLoginRequest(password)
       .then(function (result) {
-        session = { mode: "cloud", role: result.role, token: result.token };
+        session = { mode: "cloud", role: result.role, token: result.token, entry: "password" };
         saveSession(session);
         if (result.state) state = normalizeState(result.state);
         applyAccessResult(result);
@@ -182,7 +183,7 @@
     }
     authRequest({ action: "join-with-token", roomId: roomId, joinToken: joinToken })
       .then(function (result) {
-        session = { mode: "cloud", role: result.role, token: result.token };
+        session = { mode: "cloud", role: result.role, token: result.token, entry: "join" };
         saveSession(session);
         if (result.state) state = normalizeState(result.state);
         removeUrlSecret("joinToken");
@@ -206,7 +207,7 @@
     })
       .then(function (result) {
         roomId = result.roomId;
-        session = { mode: "cloud", role: result.role, token: result.token };
+        session = { mode: "cloud", role: result.role, token: result.token, entry: "grant" };
         saveSession(session);
         if (result.state) state = normalizeState(result.state);
         replaceUrlWithRoom(roomId);
@@ -262,6 +263,14 @@
     els.createJoinLinkButton = document.getElementById("createJoinLinkButton");
     els.createGrantLinkButton = document.getElementById("createGrantLinkButton");
     els.closeRoomButton = document.getElementById("closeRoomButton");
+    els.shareCard = document.getElementById("shareCard");
+    els.shareCardBackdrop = document.getElementById("shareCardBackdrop");
+    els.shareCardClose = document.getElementById("shareCardClose");
+    els.shareCardTitle = document.getElementById("shareCardTitle");
+    els.shareCardDesc = document.getElementById("shareCardDesc");
+    els.shareCardLink = document.getElementById("shareCardLink");
+    els.shareCardExpiry = document.getElementById("shareCardExpiry");
+    els.shareCardCopy = document.getElementById("shareCardCopy");
   }
 
   function renderStaticParts() {
@@ -297,8 +306,11 @@
     els.consoleButton.addEventListener("click", toggleConsole);
     els.ownerSheetBackdrop.addEventListener("click", closeConsole);
     els.ownerSheetClose.addEventListener("click", closeConsole);
+    els.shareCardBackdrop.addEventListener("click", closeShareCard);
+    els.shareCardClose.addEventListener("click", closeShareCard);
+    els.shareCardCopy.addEventListener("click", copyShareLink);
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") closeConsole();
+      if (event.key === "Escape") { closeShareCard(); closeConsole(); }
     });
     els.logoutButton.addEventListener("click", logout);
     els.redDecksSelect.addEventListener("change", function () {
@@ -495,29 +507,93 @@
 
   function shareRoom() {
     if (!session || session.mode !== "cloud" || !isOwner()) {
-      showToast("只有房主可以生成分享链接");
+      showToast("只有房主可以邀请好友");
       return;
     }
-    ownerAction({ type: "create-join-link" }).then(function (result) {
-      copyText(joinUrl(result.joinToken), "玩家免密链接已复制，24 小时内有效");
-    });
+    withGenerating(els.createJoinLinkButton, "邀请好友",
+      ownerAction({ type: "create-join-link" }).then(function (result) {
+        openShareCard({
+          title: "邀请好友",
+          desc: "好友点开链接免密加入本局，24h 内不限次数。",
+          url: joinUrl(result.joinToken),
+          expiresAt: result.expiresAt,
+          successMessage: "邀请好友链接已复制"
+        });
+      })
+    );
   }
 
   function createGrantLink() {
-    ownerAction({ type: "create-grant-link" }).then(function (result) {
-      copyText(grantUrl(result.grantToken), "朋友 24 小时开局授权链接已复制");
+    if (!session || session.mode !== "cloud" || !isRealOwner()) {
+      showToast("只有房主可以生成临时房主链接");
+      return;
+    }
+    withGenerating(els.createGrantLinkButton, "临时房主",
+      ownerAction({ type: "create-grant-link" }).then(function (result) {
+        openShareCard({
+          title: "临时房主",
+          desc: "好友点开后成为临时房主、自己开一局，24h 内不限次数。",
+          url: grantUrl(result.grantToken),
+          expiresAt: result.expiresAt,
+          successMessage: "临时房主链接已复制"
+        });
+      })
+    );
+  }
+
+  function withGenerating(button, originalText, promise) {
+    if (!button || !promise || !promise.then) return promise;
+    button.disabled = true;
+    button.textContent = "生成中…";
+    return promise.catch(function (error) {
+      return error;
+    }).then(function () {
+      button.disabled = false;
+      button.textContent = originalText;
     });
+  }
+
+  function openShareCard(opts) {
+    if (!els.shareCard) return;
+    shareCardSuccessMessage = opts.successMessage || "链接已复制";
+    els.shareCardTitle.textContent = opts.title;
+    els.shareCardDesc.textContent = opts.desc;
+    els.shareCardLink.value = opts.url;
+    els.shareCardExpiry.textContent = opts.expiresAt ? "有效至 " + formatExpiry(opts.expiresAt) : "";
+    els.shareCard.classList.add("open");
+    els.shareCard.setAttribute("aria-hidden", "false");
+  }
+
+  function closeShareCard() {
+    if (!els.shareCard) return;
+    els.shareCard.classList.remove("open");
+    els.shareCard.setAttribute("aria-hidden", "true");
+  }
+
+  function copyShareLink() {
+    var url = els.shareCardLink ? els.shareCardLink.value : "";
+    if (!url) return;
+    copyText(url, shareCardSuccessMessage);
+  }
+
+  function formatExpiry(iso) {
+    var date = new Date(iso);
+    if (isNaN(date.getTime())) return "";
+    var hh = date.getHours();
+    var mm = date.getMinutes();
+    return (date.getMonth() + 1) + "月" + date.getDate() + "日 " +
+      (hh < 10 ? "0" + hh : hh) + ":" + (mm < 10 ? "0" + mm : mm);
   }
 
   function toggleRoomClosed() {
     if (!isOwner()) return;
     var nextClosed = !access.closed;
-    var text = nextClosed ? "关闭本局后，玩家分享链接不能继续进入。确认关闭？" : "重新开启本局？";
+    var text = nextClosed ? "散场后，之前发的邀请好友链接将不能再进入。确认散场？" : "重新开局？";
     if (!window.confirm(text)) return;
     ownerAction({ type: "set-closed", closed: nextClosed }).then(function (result) {
       applyAccessResult(result);
       render();
-      showToast(nextClosed ? "本局已关闭" : "本局已开启");
+      showToast(nextClosed ? "已散场" : "已重新开局");
     });
   }
 
@@ -581,9 +657,13 @@
     var visible = isOwner();
     var open = visible && ownerPanelOpen;
     els.consoleButton.classList.toggle("is-hidden", !visible);
+    els.logoutButton.classList.toggle("is-hidden", !isRealOwner());
+    els.createJoinLinkButton.classList.toggle("is-hidden", !visible);
+    els.createGrantLinkButton.classList.toggle("is-hidden", !isRealOwner());
+    els.closeRoomButton.classList.toggle("is-hidden", !visible);
     els.ownerSheet.classList.toggle("open", open);
     els.ownerSheet.setAttribute("aria-hidden", open ? "false" : "true");
-    els.closeRoomButton.textContent = access.closed ? "开启本局" : "关闭本局";
+    els.closeRoomButton.textContent = access.closed ? "重新开局" : "散场";
   }
 
   function createCell(text, id) {
@@ -714,6 +794,10 @@
 
   function isOwner() {
     return !!(session && session.role === "owner");
+  }
+
+  function isRealOwner() {
+    return !!(session && session.role === "owner" && session.entry !== "grant" && session.entry !== "join");
   }
 
   function getOrCreateRoomId() {

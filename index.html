@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>红蓝双轨记牌器</title>
-    <link rel="stylesheet" href="./styles.css?v=20260623" />
+    <link rel="stylesheet" href="./styles.css?v=20260624" />
   </head>
   <body>
     <section class="auth-gate" id="authGate" aria-label="访问密码">
@@ -38,10 +38,24 @@
             <button class="sheet-close" type="button" id="ownerSheetClose" aria-label="关闭控制台">✕</button>
           </div>
           <div class="owner-actions">
-            <button class="purple-button" type="button" id="createJoinLinkButton">生成玩家链接</button>
-            <button class="purple-button" type="button" id="createGrantLinkButton">授权朋友开局</button>
-            <button class="purple-button danger-button wide-action" type="button" id="closeRoomButton">关闭本局</button>
+            <button class="purple-button" type="button" id="createJoinLinkButton">邀请好友</button>
+            <button class="purple-button" type="button" id="createGrantLinkButton">临时房主</button>
+            <button class="purple-button danger-button wide-action" type="button" id="closeRoomButton">散场</button>
           </div>
+        </section>
+      </div>
+
+      <div class="owner-sheet" id="shareCard" aria-hidden="true">
+        <div class="owner-sheet-backdrop" id="shareCardBackdrop"></div>
+        <section class="owner-panel share-panel" aria-label="分享链接" role="dialog" aria-modal="true">
+          <div class="owner-panel-header">
+            <div class="owner-panel-title" id="shareCardTitle">邀请好友</div>
+            <button class="sheet-close" type="button" id="shareCardClose" aria-label="关闭">✕</button>
+          </div>
+          <p class="share-desc" id="shareCardDesc"></p>
+          <input class="share-link-input" id="shareCardLink" type="text" readonly aria-label="分享链接" />
+          <div class="share-expiry" id="shareCardExpiry"></div>
+          <button class="purple-button wide-action" type="button" id="shareCardCopy">复制链接</button>
         </section>
       </div>
 
@@ -106,8 +120,8 @@
         roomAuthFunctionUrl: ""
       };
     </script>
-    <script src="./config.js?v=20260623"></script>
+    <script src="./config.js?v=20260624"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js?v=20260623"></script>
+    <script src="./app.js?v=20260624"></script>
   </body>
 </html>

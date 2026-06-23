@@ -312,6 +312,34 @@ input {
   transform: scale(0.94);
 }
 
+.share-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.share-link-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(116, 70, 120, 0.28);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  color: var(--purple-dark);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.share-expiry {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.share-expiry:empty {
+  display: none;
+}
+
 .owner-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
