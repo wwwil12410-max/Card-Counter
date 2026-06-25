@@ -537,7 +537,7 @@
       ownerAction({ type: "create-grant-link" }).then(function (result) {
         openShareCard({
           title: "临时房主",
-          desc: "好友点开后成为临时房主、自己开一局，24h 内不限次数。",
+          desc: "好友点开后成为临时房主，可以邀请其他好友，48h 内不限次数。",
           url: grantUrl(result.grantToken, result.expiresAt),
           expiresAt: result.expiresAt,
           successMessage: "临时房主链接已复制"

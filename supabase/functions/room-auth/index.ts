@@ -140,7 +140,7 @@ async function ownerAction(roomId: string, body: any) {
     const joinToken = await createRoomToken("join", roomId, expiresAt);
     return { ...accessResponse(session), joinToken, expiresAt };
   } else if (type === "create-grant-link") {
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
     const grantToken = await createRoomToken("grant", null, expiresAt);
     return { ...accessResponse(session), grantToken, expiresAt };
   } else {
