@@ -10,6 +10,8 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ownerSetupPassword = Deno.env.get("OWNER_SETUP_PASSWORD") || "";
 const supabase = createClient(supabaseUrl, serviceRoleKey);
+const JOIN_LINK_TTL_MS = 24 * 60 * 60 * 1000;
+const GRANT_LINK_TTL_MS = 48 * 60 * 60 * 1000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -86,13 +88,14 @@ async function joinWithToken(roomId: string, joinToken: string) {
   if (!access) throw statusError("Room does not exist", 404);
   if (access.closed) throw statusError("Room is closed", 403);
 
-  const token = await createSession(roomId, "player", access.access_version);
+  const token = await createSession(roomId, "player", access.access_version, tokenRow.expires_at);
   const state = await getRoomState(roomId);
   return {
     token,
     role: "player",
     state,
     closed: access.closed,
+    expiresAt: tokenRow.expires_at,
   };
 }
 
@@ -105,7 +108,7 @@ async function createRoomFromGrant(grantToken: string, body: any) {
   await upsertRoom(roomId, initialState);
   const delegatedPassword = "grant:" + crypto.randomUUID();
   const access = await createAccess(roomId, delegatedPassword);
-  const token = await createSession(roomId, "owner", access.access_version);
+  const token = await createSession(roomId, "owner", access.access_version, tokenRow.expires_at);
 
   return {
     roomId,
@@ -113,6 +116,7 @@ async function createRoomFromGrant(grantToken: string, body: any) {
     role: "owner",
     state: initialState,
     closed: false,
+    expiresAt: tokenRow.expires_at,
   };
 }
 
@@ -136,11 +140,11 @@ async function ownerAction(roomId: string, body: any) {
       .eq("room_id", roomId);
     if (error) throw error;
   } else if (type === "create-join-link") {
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + JOIN_LINK_TTL_MS).toISOString();
     const joinToken = await createRoomToken("join", roomId, expiresAt);
     return { ...accessResponse(session), joinToken, expiresAt };
   } else if (type === "create-grant-link") {
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + GRANT_LINK_TTL_MS).toISOString();
     const grantToken = await createRoomToken("grant", null, expiresAt);
     return { ...accessResponse(session), grantToken, expiresAt };
   } else {
@@ -164,7 +168,7 @@ async function requireSession(roomId: string, token: string) {
     .maybeSingle();
   if (error) throw error;
   if (!session) throw statusError("Login expired", 401);
-  if (new Date(session.expires_at).getTime() < Date.now()) {
+  if (new Date(session.expires_at).getTime() <= Date.now()) {
     await supabase.from("room_sessions").delete().eq("token_hash", tokenHash);
     throw statusError("Login expired", 401);
   }
@@ -188,15 +192,17 @@ function accessResponse(session: any) {
   };
 }
 
-async function createSession(roomId: string, role: "owner" | "player", accessVersion: number) {
+async function createSession(roomId: string, role: "owner" | "player", accessVersion: number, expiresAt?: string | null) {
   const token = crypto.randomUUID() + "." + crypto.randomUUID();
   const tokenHash = await hashValue(token);
-  const { error } = await supabase.from("room_sessions").insert({
+  const sessionRow: any = {
     token_hash: tokenHash,
     room_id: roomId,
     role,
     access_version: accessVersion,
-  });
+  };
+  if (expiresAt) sessionRow.expires_at = expiresAt;
+  const { error } = await supabase.from("room_sessions").insert(sessionRow);
   if (error) throw error;
   return token;
 }
@@ -228,7 +234,7 @@ async function getRoomToken(token: string, tokenType: "join" | "grant", roomId?:
   const { data, error } = await query.maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  if (data.expires_at && new Date(data.expires_at).getTime() < Date.now()) return null;
+  if (data.expires_at && new Date(data.expires_at).getTime() <= Date.now()) return null;
   return data;
 }
 

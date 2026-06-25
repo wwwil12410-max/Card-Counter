@@ -40,6 +40,7 @@
   var roomChannel = null;
   var saveTimer = null;
   var toastTimer = null;
+  var expiryTimer = null;
   var remoteApplying = false;
   var ownerPanelOpen = false;
   var eventsBound = false;
@@ -82,6 +83,14 @@
 
     roomId = getOrCreateRoomId();
     session = loadSession();
+    if (isSessionExpired(session)) {
+      clearSession();
+      session = null;
+      if (!joinToken) {
+        showLogin("链接已过期，请重新获取链接");
+        return;
+      }
+    }
 
     if (joinToken && !session) {
       joinWithToken(joinToken);
@@ -186,7 +195,13 @@
     }
     authRequest({ action: "join-with-token", roomId: roomId, joinToken: joinToken })
       .then(function (result) {
-        session = { mode: "cloud", role: result.role, token: result.token, entry: "join" };
+        session = {
+          mode: "cloud",
+          role: result.role,
+          token: result.token,
+          entry: "join",
+          expiresAt: result.expiresAt || getExpiryParam()
+        };
         saveSession(session);
         if (result.state) state = normalizeState(result.state);
         removeUrlSecret("joinToken");
@@ -210,10 +225,16 @@
     })
       .then(function (result) {
         roomId = result.roomId;
-        session = { mode: "cloud", role: result.role, token: result.token, entry: "grant" };
+        session = {
+          mode: "cloud",
+          role: result.role,
+          token: result.token,
+          entry: "grant",
+          expiresAt: result.expiresAt || getExpiryParam()
+        };
         saveSession(session);
         if (result.state) state = normalizeState(result.state);
-        replaceUrlWithRoom(roomId);
+        replaceUrlWithRoom(roomId, session.expiresAt);
         applyAccessResult(result);
         unlockApp();
         showToast("已用朋友授权开好新牌局");
@@ -227,6 +248,7 @@
     if (els.bootScreen) els.bootScreen.classList.add("is-hidden");
     els.authGate.classList.add("is-hidden");
     els.appShell.classList.remove("is-hidden");
+    scheduleSessionExpiry();
     initApp();
   }
 
@@ -693,9 +715,17 @@
     return cell;
   }
 
-  function getExpiryFromUrl() {
+  function getExpiryParam() {
     var params = new URLSearchParams(window.location.search);
-    var exp = params.get("exp");
+    return params.get("exp") || "";
+  }
+
+  function getActiveExpiry() {
+    return getExpiryParam() || (session && session.expiresAt) || "";
+  }
+
+  function getFormattedExpiry() {
+    var exp = getActiveExpiry();
     if (!exp) return "";
     var date = new Date(exp);
     if (isNaN(date.getTime())) return "";
@@ -704,14 +734,15 @@
 
   function renderExpiryBanner() {
     if (!els.expiryBanner) return;
-    var expiryFromUrl = getExpiryFromUrl();
-    if (expiryFromUrl) {
-      els.expiryBanner.textContent = "链接有效至 " + expiryFromUrl;
-      var expDate = new Date(new URLSearchParams(window.location.search).get("exp"));
+    var formattedExpiry = getFormattedExpiry();
+    if (formattedExpiry) {
+      els.expiryBanner.textContent = "链接有效至 " + formattedExpiry;
+      var expDate = new Date(getActiveExpiry());
       var diffHours = (expDate.getTime() - Date.now()) / 3600000;
-      els.expiryBanner.classList.toggle("is-urgent", diffHours > 0 && diffHours < 1);
+      els.expiryBanner.classList.toggle("is-urgent", diffHours <= 0 || (diffHours > 0 && diffHours < 1));
     } else {
       els.expiryBanner.textContent = "";
+      els.expiryBanner.classList.remove("is-urgent");
     }
   }
 
@@ -882,10 +913,11 @@
     return Array.prototype.map.call(bytes, function (byte) { return byte.toString(16).padStart(2, "0"); }).join("");
   }
 
-  function replaceUrlWithRoom(id) {
+  function replaceUrlWithRoom(id, expiresAt) {
     var url = new URL(window.location.href);
     url.search = "";
     url.searchParams.set("roomId", id);
+    if (expiresAt) url.searchParams.set("exp", expiresAt);
     window.history.replaceState({}, "", url.toString());
   }
 
@@ -975,7 +1007,39 @@
     } catch (error) {
       // Local persistence is best-effort.
     }
+    if (expiryTimer) {
+      clearTimeout(expiryTimer);
+      expiryTimer = null;
+    }
     session = null;
+  }
+
+  function isSessionExpired(value) {
+    if (!value || !value.expiresAt) return false;
+    var expiresAt = new Date(value.expiresAt).getTime();
+    return !isNaN(expiresAt) && expiresAt <= Date.now();
+  }
+
+  function scheduleSessionExpiry() {
+    if (expiryTimer) clearTimeout(expiryTimer);
+    expiryTimer = null;
+    if (!session || !session.expiresAt) return;
+    var expiresAt = new Date(session.expiresAt).getTime();
+    if (isNaN(expiresAt)) return;
+    var delay = expiresAt - Date.now();
+    if (delay <= 0) {
+      expireLinkSession();
+      return;
+    }
+    expiryTimer = setTimeout(expireLinkSession, Math.min(delay, 2147483647));
+  }
+
+  function expireLinkSession() {
+    clearSession();
+    teardownChannel();
+    access = { closed: false };
+    ownerPanelOpen = false;
+    showLogin("链接已过期，请重新获取链接");
   }
 
   function loadLocalActiveColor(id) {
