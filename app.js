@@ -81,19 +81,24 @@
       return;
     }
 
-    roomId = getOrCreateRoomId();
-    session = loadSession();
-    if (isSessionExpired(session)) {
-      clearSession();
-      session = null;
-      if (!joinToken) {
-        showLogin("链接已过期，请重新获取链接");
+    if (joinToken) {
+      roomId = getRoomIdFromUrl();
+      if (!roomId) {
+        showLogin("分享链接缺少牌局编号");
         return;
       }
+      clearSession();
+      session = null;
+      joinWithToken(joinToken);
+      return;
     }
 
-    if (joinToken && !session) {
-      joinWithToken(joinToken);
+    roomId = getOrCreateRoomId();
+    session = loadSession();
+    if (isSessionExpired(session) || isLegacyLinkSession(session)) {
+      clearSession();
+      session = null;
+      showLogin("链接已过期，请重新获取链接");
       return;
     }
 
@@ -209,7 +214,7 @@
         unlockApp();
       })
       .catch(function (error) {
-        showLogin(error.message || "玩家链接已失效");
+        showLogin(friendlyLinkError(error));
       });
   }
 
@@ -240,7 +245,7 @@
         showToast("已用朋友授权开好新牌局");
       })
       .catch(function (error) {
-        showLogin(error.message || "授权链接已失效");
+        showLogin(friendlyLinkError(error));
       });
   }
 
@@ -841,6 +846,14 @@
     return message || "登录失败";
   }
 
+  function friendlyLinkError(error) {
+    var message = error && error.message ? error.message : "";
+    if (/invalid or expired|已失效|过期/i.test(message)) return "链接已失效，请重新获取链接";
+    if (/room is closed|本局已关闭/i.test(message)) return "本局已关闭";
+    if (/failed to fetch|network/i.test(message)) return "网络连接失败";
+    return message || "链接已失效，请重新获取链接";
+  }
+
   function cloudAuthReady() {
     var config = getConfig();
     return !!(config.supabaseUrl && config.supabaseAnonKey && getAuthFunctionUrl(config));
@@ -1018,6 +1031,10 @@
     if (!value || !value.expiresAt) return false;
     var expiresAt = new Date(value.expiresAt).getTime();
     return !isNaN(expiresAt) && expiresAt <= Date.now();
+  }
+
+  function isLegacyLinkSession(value) {
+    return !!(value && (value.entry === "join" || value.entry === "grant") && !value.expiresAt);
   }
 
   function scheduleSessionExpiry() {
