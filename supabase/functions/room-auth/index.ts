@@ -70,6 +70,10 @@ async function ownerLogin(roomId: string, body: any) {
     throw statusError("Wrong owner password", 403);
   }
 
+  if (access.closed) {
+    access = await setRoomClosed(roomId, false);
+  }
+
   const token = await createSession(roomId, "owner", access.access_version);
   const state = await getRoomState(roomId);
   return {
@@ -134,11 +138,7 @@ async function ownerAction(roomId: string, body: any) {
 
   const type = String(body.type || "");
   if (type === "set-closed") {
-    const { error } = await supabase
-      .from("room_access")
-      .update({ closed: body.closed === true, updated_at: new Date().toISOString() })
-      .eq("room_id", roomId);
-    if (error) throw error;
+    await setRoomClosed(roomId, body.closed === true);
   } else if (type === "create-join-link") {
     const expiresAt = new Date(Date.now() + JOIN_LINK_TTL_MS).toISOString();
     const joinToken = await createRoomToken("join", roomId, expiresAt);
@@ -258,6 +258,17 @@ async function createAccess(roomId: string, ownerPassword: string) {
     closed: false,
   };
   const { data, error } = await supabase.from("room_access").insert(row).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+async function setRoomClosed(roomId: string, closed: boolean) {
+  const { data, error } = await supabase
+    .from("room_access")
+    .update({ closed, updated_at: new Date().toISOString() })
+    .eq("room_id", roomId)
+    .select("*")
+    .single();
   if (error) throw error;
   return data;
 }

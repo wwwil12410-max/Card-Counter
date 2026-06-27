@@ -161,7 +161,9 @@
         saveSession(session);
         if (result.state) state = normalizeState(result.state);
         applyAccessResult(result);
-        unlockApp();
+        return reopenRoomAfterOwnerLoginIfNeeded().then(function () {
+          unlockApp();
+        });
       })
       .catch(function (error) {
         els.authError.textContent = friendlyAuthError(error);
@@ -186,6 +188,16 @@
         initialState: payload.initialState
       });
     });
+  }
+
+  function reopenRoomAfterOwnerLoginIfNeeded() {
+    if (!session || session.mode !== "cloud" || session.entry !== "password" || !access.closed) {
+      return Promise.resolve();
+    }
+    return authRequest({ action: "owner-action", roomId: roomId, token: session.token, type: "set-closed", closed: false })
+      .then(function (result) {
+        applyAccessResult(result);
+      });
   }
 
   function joinWithToken(joinToken) {
